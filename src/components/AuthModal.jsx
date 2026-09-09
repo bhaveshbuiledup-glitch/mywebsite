@@ -1,6 +1,6 @@
 import { ArrowRight, Check, Eye, EyeOff, LockKeyhole, X } from "lucide-react";
 import { useState } from "react";
-import { getDemoCredentials, hashDemoPassword, saveDemoCredentials, saveDemoProfile } from "./authUtils";
+import { getDemoCredentials, getDemoUsers, hashDemoPassword, saveDemoCredentials, saveDemoProfile, saveDemoUsers } from "./authUtils";
 
 const SESSION_KEY = "bizgrow-session";
 
@@ -23,12 +23,23 @@ function AuthModal({ open, onClose, initialMode = "login", onAuthenticated }) {
     if (isSignup && values.password !== values.confirmPassword) return setError("Passwords do not match.");
     const normalizedEmail = values.email.trim().toLowerCase();
     const credentials = getDemoCredentials();
+    const demoUsers = getDemoUsers();
     const passwordHash = await hashDemoPassword(values.password);
-    if (isSignup && credentials[normalizedEmail]) return setError("An account with this email already exists. Please log in.");
-    if (!isSignup && credentials[normalizedEmail] !== passwordHash) return setError("Invalid email/ID or password. Please check your credentials and try again.");
-    const existingProfile = JSON.parse(localStorage.getItem("bizgrow-demo-user") || "{}");
-    if (isSignup) saveDemoCredentials({ ...credentials, [normalizedEmail]: passwordHash });
-    saveDemoProfile({ ...existingProfile, name: isSignup ? values.name : (existingProfile.name || normalizedEmail.split("@")[0]), email: normalizedEmail });
+    let apiAvailable = false;
+    try {
+      const endpoint = isSignup ? "/api/auth/register" : "/api/auth/login";
+      const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(isSignup ? { name: values.name.trim(), email: normalizedEmail, password: values.password } : { email: normalizedEmail, password: values.password }) });
+      const payload = await response.json();
+      if (response.status === 503) throw new Error("backend-unavailable");
+      apiAvailable = true;
+      if (!response.ok) return setError(payload.error || (isSignup ? "Unable to create account." : "Invalid email/ID or password. Please check your credentials and try again."));
+      saveDemoProfile(payload.user);
+    } catch {
+      if (isSignup && credentials[normalizedEmail]) return setError("An account with this email already exists. Please log in.");
+      if (!isSignup && credentials[normalizedEmail] !== passwordHash) return setError("Invalid email/ID or password. Please check your credentials and try again.");
+    }
+    if (!apiAvailable && isSignup) { saveDemoCredentials({ ...credentials, [normalizedEmail]: passwordHash }); saveDemoUsers({ ...demoUsers, [normalizedEmail]: { name: values.name.trim(), email: normalizedEmail } }); }
+    if (!apiAvailable) { const fallbackUser = demoUsers[normalizedEmail]; saveDemoProfile({ name: isSignup ? values.name.trim() : (fallbackUser?.name || normalizedEmail.split("@")[0]), email: normalizedEmail }); }
     localStorage.setItem(SESSION_KEY, JSON.stringify({ email: normalizedEmail, signedInAt: Date.now(), remember: values.remember }));
     localStorage.setItem("bizgrow-auth-popup-dismissed", "true");
     close();
