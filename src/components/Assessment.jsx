@@ -3,15 +3,14 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 const STORAGE_KEY = "bizgrow-assessment";
-const initialAnswers = { businessType: "", businessAge: "", businessDescription: "", website: "", socialMedia: "", advertising: "", seo: "", targetCustomers: "", marketingGoals: "", marketingChallenges: "", budget: "", expectedResults: "", name: "", email: "", phone: "" };
+const initialAnswers = { businessName: "", businessType: "", businessAge: "", businessDescription: "", website: "", socialMedia: "", advertising: "", seo: "", targetCustomers: "", marketingGoals: "", marketingChallenges: "", budget: "", expectedResults: "" };
 const steps = [
-  { title: "About your business", fields: [{ key: "businessType", label: "What type of business do you run?", type: "options", options: ["Local service", "E-commerce", "Professional service", "Retail", "Creative business"] }, { key: "businessAge", label: "How long have you been in business?", type: "options", options: ["Less than 1 year", "1–3 years", "4–7 years", "8+ years"] }, { key: "businessDescription", label: "Tell us briefly about your business", type: "textarea", placeholder: "What do you sell or help people with?" }] },
+  { title: "About your business", fields: [{ key: "businessName", label: "What is your business name?", type: "input", placeholder: "Northstar Studio" }, { key: "businessType", label: "What type of business do you run?", type: "options", options: ["Local service", "E-commerce", "Professional service", "Retail", "Creative business"] }, { key: "businessAge", label: "How long have you been in business?", type: "options", options: ["Less than 1 year", "1–3 years", "4–7 years", "8+ years"] }, { key: "businessDescription", label: "Tell us briefly about your business", type: "textarea", placeholder: "What do you sell or help people with?" }] },
   { title: "Your digital presence", fields: [{ key: "website", label: "How would you describe your website?", type: "options", options: ["I don't have one", "It needs work", "It works well", "It drives leads"] }, { key: "socialMedia", label: "How active are you on social media?", type: "options", options: ["Not active yet", "Occasionally", "Consistently", "Very active"] }] },
   { title: "Growth channels", fields: [{ key: "advertising", label: "Have you invested in paid advertising?", type: "options", options: ["Never", "Tried it once", "Run it occasionally", "Run it consistently"] }, { key: "seo", label: "How confident are you in your SEO?", type: "options", options: ["Not sure where to start", "Some basics in place", "Working on it", "A strong focus"] }] },
   { title: "Audience & goals", fields: [{ key: "targetCustomers", label: "How clearly defined are your target customers?", type: "options", options: ["I need help defining them", "I have a general idea", "Well defined", "Very specific and researched"] }, { key: "marketingGoals", label: "What is your primary marketing goal?", type: "options", options: ["Get more awareness", "Generate more leads", "Increase online sales", "Retain more customers"] }] },
   { title: "Your challenges", fields: [{ key: "marketingChallenges", label: "What is your biggest marketing challenge?", type: "options", options: ["Knowing what to do", "Finding the time", "Getting consistent leads", "Measuring results"] }, { key: "budget", label: "What is your monthly marketing budget?", type: "options", options: ["Under $500", "$500–$1,500", "$1,500–$3,000", "$3,000+"] }] },
   { title: "Define success", fields: [{ key: "expectedResults", label: "What result would make marketing a success?", type: "options", options: ["More visibility", "A steady flow of leads", "More revenue", "A predictable growth engine"] }] },
-  { title: "Where to send your report", fields: [{ key: "name", label: "Your name", type: "input", placeholder: "Alex Morgan" }, { key: "email", label: "Email address", type: "input", placeholder: "alex@business.com" }, { key: "phone", label: "Phone number", type: "input", placeholder: "+1 555 000 0000" }] },
 ];
 
 function Assessment() {
@@ -24,7 +23,7 @@ function Assessment() {
   useEffect(() => { localStorage.setItem(STORAGE_KEY, JSON.stringify(answers)); }, [answers]);
   const updateAnswer = (key, value) => { setAnswers((current) => ({ ...current, [key]: value })); setError(""); };
   const isValid = () => step.fields.every((field) => { const value = answers[field.key]?.trim(); return field.key !== "email" ? Boolean(value) : Boolean(value && /^\S+@\S+\.\S+$/.test(value)); });
-  const next = () => { if (!isValid()) { setError("Please complete each field to continue."); return; } if (stepIndex === steps.length - 1) { navigate("/report"); } else { setStepIndex((current) => current + 1); window.scrollTo({ top: 0, behavior: "smooth" }); } };
+  const next = () => { if (!isValid()) { setError("Please complete each field to continue."); return; } if (stepIndex === steps.length - 1) { navigate("/report-contact"); } else { setStepIndex((current) => current + 1); window.scrollTo({ top: 0, behavior: "smooth" }); } };
 
   return <main className="assessment-page"><div className="assessment-shell">
     <div className="assessment-top"><Link className="back-home" to="/"><ArrowLeft size={16} /> Back to home</Link><span><LockKeyhole size={13} /> Your answers are private</span></div>

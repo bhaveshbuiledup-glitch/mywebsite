@@ -1,0 +1,12 @@
+const scoreValue = (answer, options) => Math.max(0, options.indexOf(answer) + 1) * (100 / options.length);
+
+export function getReport(answers) {
+  const parts = [scoreValue(answers.website, ["I don't have one", "It needs work", "It works well", "It drives leads"]), scoreValue(answers.socialMedia, ["Not active yet", "Occasionally", "Consistently", "Very active"]), scoreValue(answers.advertising, ["Never", "Tried it once", "Run it occasionally", "Run it consistently"]), scoreValue(answers.seo, ["Not sure where to start", "Some basics in place", "Working on it", "A strong focus"]), scoreValue(answers.targetCustomers, ["I need help defining them", "I have a general idea", "Well defined", "Very specific and researched"])];
+  const score = Math.round(parts.reduce((sum, item) => sum + (Number.isNaN(item) ? 45 : item), 0) / parts.length);
+  const level = score >= 75 ? "Growth ready" : score >= 55 ? "Promising foundation" : "Early opportunity";
+  const strengths = [answers.businessType ? `${answers.businessType} businesses have a clear path to focused growth.` : "You have a clear reason to invest in growth.", answers.targetCustomers?.includes("defined") || answers.targetCustomers?.includes("specific") ? "Your audience is well defined, which makes campaigns more efficient." : "You are thinking intentionally about who you want to reach.", answers.marketingGoals ? `Your focus on ${answers.marketingGoals.toLowerCase()} gives the plan a measurable direction.` : "You have a meaningful growth goal."];
+  const weaknesses = [answers.website === "I don't have one" || answers.website === "It needs work" ? "Your website is the highest-impact digital presence opportunity." : "Your conversion journey could be tested and improved.", answers.seo === "Not sure where to start" ? "SEO is an untapped source of sustainable discovery." : "Your organic visibility can become more consistent.", answers.advertising === "Never" ? "Paid campaigns are a chance to reach high-intent customers faster." : "Channel performance would benefit from clearer measurement."];
+  const recommended = score < 55 ? ["Website & local SEO foundation", "Social media content system", "Conversion-focused messaging"] : score < 75 ? ["SEO and content growth", "Lead generation campaigns", "Analytics and conversion tracking"] : ["Integrated campaign strategy", "Performance optimization", "Retention and referral growth"];
+  const plan = answers.budget === "$3,000+" || score >= 75 ? 12 : score >= 55 ? 6 : 3;
+  return { score, level, strengths, weaknesses, recommended, parts, plan };
+}
