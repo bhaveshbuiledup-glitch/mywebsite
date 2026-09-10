@@ -22,24 +22,33 @@ function AuthModal({ open, onClose, initialMode = "login", onAuthenticated }) {
     if (isSignup && !values.name.trim()) return setError("Enter your full name.");
     if (isSignup && values.password !== values.confirmPassword) return setError("Passwords do not match.");
     const normalizedEmail = values.email.trim().toLowerCase();
-    const credentials = getDemoCredentials();
-    const demoUsers = getDemoUsers();
     const passwordHash = await hashDemoPassword(values.password);
     let apiAvailable = false;
+
     try {
       const endpoint = isSignup ? "/api/auth/register" : "/api/auth/login";
       const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(isSignup ? { name: values.name.trim(), email: normalizedEmail, password: values.password } : { email: normalizedEmail, password: values.password }) });
-      const payload = await response.json();
       if (response.status === 503) throw new Error("backend-unavailable");
       apiAvailable = true;
+      const payload = await response.json();
       if (!response.ok) return setError(payload.error || (isSignup ? "Unable to create account." : "Invalid email/ID or password. Please check your credentials and try again."));
       saveDemoProfile(payload.user);
-    } catch {
-      if (isSignup && credentials[normalizedEmail]) return setError("An account with this email already exists. Please log in.");
-      if (!isSignup && credentials[normalizedEmail] !== passwordHash) return setError("Invalid email/ID or password. Please check your credentials and try again.");
+    } catch (err) {
+      if (apiAvailable) return;
+      const credentials = getDemoCredentials();
+      const demoUsers = getDemoUsers();
+      if (isSignup) {
+        if (credentials[normalizedEmail]) return setError("An account with this email already exists. Please log in.");
+        saveDemoCredentials({ ...credentials, [normalizedEmail]: passwordHash });
+        saveDemoUsers({ ...demoUsers, [normalizedEmail]: { name: values.name.trim(), email: normalizedEmail } });
+        saveDemoProfile({ name: values.name.trim(), email: normalizedEmail });
+      } else {
+        if (credentials[normalizedEmail] !== passwordHash) return setError("Invalid email/ID or password. Please check your credentials and try again.");
+        const fallbackUser = demoUsers[normalizedEmail];
+        saveDemoProfile({ name: fallbackUser?.name || normalizedEmail.split("@")[0], email: normalizedEmail });
+      }
     }
-    if (!apiAvailable && isSignup) { saveDemoCredentials({ ...credentials, [normalizedEmail]: passwordHash }); saveDemoUsers({ ...demoUsers, [normalizedEmail]: { name: values.name.trim(), email: normalizedEmail } }); }
-    if (!apiAvailable) { const fallbackUser = demoUsers[normalizedEmail]; saveDemoProfile({ name: isSignup ? values.name.trim() : (fallbackUser?.name || normalizedEmail.split("@")[0]), email: normalizedEmail }); }
+
     localStorage.setItem(SESSION_KEY, JSON.stringify({ email: normalizedEmail, signedInAt: Date.now(), remember: values.remember }));
     localStorage.setItem("bizgrow-auth-popup-dismissed", "true");
     close();
@@ -56,7 +65,7 @@ function AuthModal({ open, onClose, initialMode = "login", onAuthenticated }) {
         <label>Password<div className="password-input"><input value={values.password} onChange={(event) => update("password", event.target.value)} placeholder="At least 8 characters" type={showPassword ? "text" : "password"} autoComplete={isSignup ? "new-password" : "current-password"} /><button type="button" onClick={() => setShowPassword(!showPassword)} aria-label={showPassword ? "Hide password" : "Show password"}>{showPassword ? <EyeOff size={16} /> : <Eye size={16} />}</button></div></label>
         {isSignup && <label>Confirm Password<input value={values.confirmPassword} onChange={(event) => update("confirmPassword", event.target.value)} placeholder="Repeat your password" type="password" autoComplete="new-password" /></label>}
         {!isSignup && <div className="auth-options"><label className="checkbox-label"><input type="checkbox" checked={values.remember} onChange={(event) => update("remember", event.target.checked)} /> Remember me</label><button type="button" className="forgot-button" onClick={() => setError("Password reset is available when a backend is connected.")}>Forgot Password?</button></div>}
-        <label className="checkbox-label popup-dismiss"><input type="checkbox" checked={dontShowAgain} onChange={(event) => setDontShowAgain(event.target.checked)} /> Don’t show again</label>
+        <label className="checkbox-label popup-dismiss"><input type="checkbox" checked={dontShowAgain} onChange={(event) => setDontShowAgain(event.target.checked)} /> Don't show again</label>
         {error && <p className="form-error">{error}</p>}<button className="continue-button auth-submit" type="submit">{isSignup ? "Create Account" : "Login"}<ArrowRight size={16} /></button>
         <p className="auth-switch">{isSignup ? "Already have an account?" : "Don't have an account?"} <button type="button" onClick={() => { setMode(isSignup ? "login" : "signup"); setError(""); }}>{isSignup ? "Login" : "Sign Up"}</button></p>
         <small className="auth-disclaimer">Demo mode stores your profile and session flag locally. Passwords are never stored.</small>

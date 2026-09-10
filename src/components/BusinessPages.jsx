@@ -1,4 +1,5 @@
-import { ArrowRight, BarChart3, Check, Compass, FileText, Globe2, LineChart, MapPin, Megaphone, Search, ShieldCheck, ShoppingBag, Sparkles, Target, TrendingUp, Users, WandSparkles, LayoutDashboard } from "lucide-react";
+import { ArrowRight, BarChart3, Check, Compass, FileText, Globe2, LineChart, MapPin, Megaphone, Search, ShieldCheck, ShoppingBag, Sparkles, Target, TrendingUp, Users, WandSparkles, LayoutDashboard, X } from "lucide-react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 
 const serviceData = [[Megaphone, "Social Media Marketing", "Build a recognizable presence with content that starts conversations.", ["Content calendar", "Community growth", "Monthly insights"]], [Search, "SEO", "Help the right customers find you when they are ready to choose.", ["Keyword strategy", "On-page optimization", "Search reporting"]], [LineChart, "Google Ads", "Capture high-intent demand with campaigns shaped around your goals.", ["Search campaigns", "Conversion tracking", "Bid optimization"]], [Target, "Meta Ads", "Reach future customers with creative, targeted campaigns across social.", ["Audience testing", "Creative direction", "Performance scaling"]], [Globe2, "Website Development", "Turn your digital home into a confident, high-converting first impression.", ["Responsive design", "Conversion paths", "Analytics setup"]], [FileText, "Content Marketing", "Earn attention and trust with useful ideas your audience wants to read.", ["Editorial strategy", "Expert content", "Distribution plan"]], [Users, "Lead Generation", "Create a repeatable system for turning interest into qualified conversations.", ["Offer strategy", "Landing pages", "Lead nurturing"]], [MapPin, "Local SEO", "Become easier to discover in the neighborhoods and communities you serve.", ["Google Business", "Review growth", "Local listings"]], [ShoppingBag, "E-commerce Marketing", "Make every product page, campaign, and customer touchpoint work harder.", ["Product strategy", "Shopping campaigns", "Retention flows"]]];
@@ -12,7 +13,52 @@ export function Pricing() { return <PageFrame eyebrow="Pricing" title="Choose th
 
 export function About() { return <PageFrame eyebrow="About BizGrow" title="Better marketing starts with a better understanding of your business." intro="BizGrow is a digital marketing assessment and growth platform for small business owners who want clarity before they invest."><div className="about-grid"><article><Sparkles size={22} /><h2>What we do</h2><p>We translate the moving parts of digital marketing into a score, a set of priorities, and a practical growth strategy you can understand.</p></article><article><Target size={22} /><h2>Why we created it</h2><p>Small business owners are asked to be everywhere at once. BizGrow exists to help you decide what matters most right now.</p></article><article><TrendingUp size={22} /><h2>Our approach</h2><p>Context first, recommendations second. We use your answers and transparent scoring rules to keep every recommendation grounded.</p></article><article><Users size={22} /><h2>Who it helps</h2><p>Local businesses, online shops, consultants, studios, and service teams ready to turn effort into consistent growth.</p></article></div><div className="about-callout"><LayoutDashboard size={25} /><div><h2>Start with your marketing baseline.</h2><p>The free assessment gives you a useful first view in less than five minutes.</p></div><Link className="primary-action" to="/assessment">Take the assessment <ArrowRight size={16} /></Link></div></PageFrame>; }
 
-export function Contact() { const submit = (event) => { event.preventDefault(); event.currentTarget.reset(); }; return <PageFrame eyebrow="Contact" title="Let’s make your next marketing decision clearer." intro="Tell us where you are starting and we will help you find the most useful next step."><div className="contact-page-grid"><form className="contact-form" onSubmit={submit}><label>Full Name<input required placeholder="Alex Morgan" /></label><label>Business Name<input required placeholder="Northstar Studio" /></label><div className="form-columns"><label>Email<input required type="email" placeholder="alex@business.com" /></label><label>Phone<input required type="tel" placeholder="+1 555 000 0000" /></label></div><label>Message<textarea required rows="5" placeholder="How can we help your business grow?" /></label><button className="primary-action" type="submit">Send Message <ArrowRight size={16} /></button></form><aside className="contact-info"><div className="contact-info-icon"><Globe2 size={22} /></div><h2>Talk to a growth guide.</h2><p>Questions about your score, services, or a plan? We are here to make the next conversation useful.</p><a href="mailto:hello@bizgrow.co">hello@bizgrow.co</a><span>Monday–Friday, 9am–5pm</span><Link className="outline-button" to="/assessment">Book through assessment <ArrowRight size={15} /></Link></aside></div></PageFrame>; }
+export function Contact() {
+  const [values, setValues] = useState({ fullName: "", businessName: "", email: "", phone: "", message: "" });
+  const [error, setError] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+
+  const update = (key, value) => {
+    if (key === "phone") {
+      if (/\D/.test(value)) { setError("Phone number must contain numbers only."); return; }
+      value = value.slice(0, 10);
+    }
+    setValues((current) => ({ ...current, [key]: value }));
+    setError("");
+  };
+
+  const submit = async (event) => {
+    event.preventDefault();
+    if (!values.fullName.trim()) return setError("Please enter your full name.");
+    if (!values.businessName.trim()) return setError("Please enter your business name.");
+    if (!/^\S+@\S+\.\S+$/.test(values.email)) return setError("Please enter a valid email address.");
+    if (!/^\d{10}$/.test(values.phone)) return setError("Please enter a valid 10-digit phone number.");
+    if (!values.message.trim()) return setError("Please enter a message.");
+
+    try {
+      const health = await fetch("/api/health");
+      const status = await health.json();
+      if (status.database === "connected") {
+        const response = await fetch("/api/contact", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(values),
+        });
+        if (!response.ok) {
+          const payload = await response.json();
+          return setError(payload.error || "Failed to send message.");
+        }
+      }
+    } catch {
+      /* continue to success even if backend is unavailable */
+    }
+
+    setValues({ fullName: "", businessName: "", email: "", phone: "", message: "" });
+    setSubmitted(true);
+  };
+
+  return <PageFrame eyebrow="Contact" title={"Let\u2019s make your next marketing decision clearer."} intro="Tell us where you are starting and we will help you find the most useful next step."><div className="contact-page-grid"><form className="contact-form" onSubmit={submit}><label>Full Name<input required placeholder="Alex Morgan" value={values.fullName} onChange={(event) => update("fullName", event.target.value)} /></label><label>Business Name<input required placeholder="Northstar Studio" value={values.businessName} onChange={(event) => update("businessName", event.target.value)} /></label><div className="form-columns"><label>Email<input required type="email" placeholder="alex@business.com" value={values.email} onChange={(event) => update("email", event.target.value)} /></label><label>Phone<input required type="tel" inputMode="numeric" maxLength="10" pattern="[0-9]{10}" placeholder="5551234567" value={values.phone} onChange={(event) => update("phone", event.target.value)} /><small>Enter exactly 10 digits.</small></label></div><label>Message<textarea required rows="5" placeholder="How can we help your business grow?" value={values.message} onChange={(event) => update("message", event.target.value)} /></label>{error && <p className="form-error" role="alert">{error}</p>}<button className="primary-action" type="submit">Send Message <ArrowRight size={16} /></button></form>{submitted && <div className="auth-overlay" role="dialog" aria-modal="true" aria-label="Success"><div className="auth-modal" style={{ maxWidth: "420px" }}><button className="auth-close" onClick={() => setSubmitted(false)} aria-label="Close"><X size={19} /></button><div className="auth-visual"><span className="auth-badge"><Check size={14} /> Message received</span><h2>Message sent successfully!</h2><p>Thank you for reaching out. We will get back to you within one business day.</p></div><div className="auth-form" style={{ padding: "1.5rem" }}><button className="continue-button auth-submit" type="button" onClick={() => setSubmitted(false)}>Close</button></div></div></div>}<aside className="contact-info"><div className="contact-info-icon"><Globe2 size={22} /></div><h2>Talk to a growth guide.</h2><p>Questions about your score, services, or a plan? We are here to make the next conversation useful.</p><a href="mailto:hello@bizgrow.co">hello@bizgrow.co</a><span>Monday\u2013Friday, 9am\u20135pm</span><Link className="outline-button" to="/assessment">Book through assessment <ArrowRight size={15} /></Link></aside></div></PageFrame>;
+}
 
 export function Dashboard() { const profile = JSON.parse(localStorage.getItem("bizgrow-demo-user") || "{}"); return <PageFrame eyebrow="Your workspace" title={profile.name ? `Good to see you, ${profile.name.split(" ")[0]}.` : "Your growth workspace."} intro="Keep your score, priorities, and next actions in one calm place."><div className="dashboard-grid"><article className="dashboard-score"><span className="muted-label">Marketing Score</span><strong>72<span>/100</span></strong><p>Promising foundation</p><Link className="inline-link" to="/results">View full results <ArrowRight size={15} /></Link></article><article className="dashboard-card"><div className="dashboard-card-title"><h2>Next best actions</h2><span>3 priorities</span></div><ul className="dashboard-list"><li><span><Check size={14} /></span> Clarify your ideal customer message</li><li><span><Check size={14} /></span> Create a repeatable SEO rhythm</li><li><span><Check size={14} /></span> Measure every campaign conversion</li></ul></article><article className="dashboard-card"><div className="dashboard-card-title"><h2>Recommended plan</h2><Sparkles size={17} /></div><h3>6-Month Growth</h3><p>Build the foundation, test the right channels, and optimize with evidence.</p><Link className="outline-button" to="/pricing">Review plans <ArrowRight size={15} /></Link></article></div></PageFrame>; }
 

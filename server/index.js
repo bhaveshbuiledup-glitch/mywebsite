@@ -32,6 +32,17 @@ const reportSchema = new mongoose.Schema({
 });
 
 const Report = mongoose.models.BizGrowReport || mongoose.model("BizGrowReport", reportSchema);
+
+const contactSchema = new mongoose.Schema({
+  fullName: { type: String, required: true, trim: true },
+  businessName: { type: String, required: true, trim: true },
+  email: { type: String, required: true, lowercase: true, trim: true },
+  phone: { type: String, required: true, match: /^\d{10}$/ },
+  message: { type: String, required: true, trim: true },
+  createdAt: { type: Date, default: Date.now },
+});
+
+const Contact = mongoose.models.BizGrowContact || mongoose.model("BizGrowContact", contactSchema);
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
   email: { type: String, required: true, unique: true, lowercase: true, trim: true, index: true },
@@ -114,6 +125,35 @@ app.get("/api/reports", async (request, response) => {
   } catch (error) {
     console.error("Report lookup failed:", error.message);
     return response.status(500).json({ error: "Unable to load reports." });
+  }
+});
+
+app.post("/api/contact", async (request, response) => {
+  try {
+    if (mongoose.connection.readyState !== 1) return response.status(503).json({ error: "MongoDB is not connected." });
+    const { fullName, businessName, email, phone, message } = request.body;
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+    if (!fullName?.trim() || !businessName?.trim() || !/^\S+@\S+\.\S+$/.test(normalizedEmail) || !/^\d{10}$/.test(phone || "") || !message?.trim()) {
+      return response.status(400).json({ error: "Valid name, business, email, 10-digit phone, and message are required." });
+    }
+    const contact = await Contact.create({ fullName: fullName.trim(), businessName: businessName.trim(), email: normalizedEmail, phone, message: message.trim() });
+    return response.status(201).json({ success: true, id: contact._id });
+  } catch (error) {
+    console.error("Contact save failed:", error.message);
+    return response.status(500).json({ error: "Unable to save contact submission." });
+  }
+});
+
+app.get("/api/contact", async (request, response) => {
+  try {
+    if (mongoose.connection.readyState !== 1) return response.status(503).json({ error: "MongoDB is not connected." });
+    const email = String(request.query.email || "").trim().toLowerCase();
+    const query = email ? { email } : {};
+    const contacts = await Contact.find(query).sort({ createdAt: -1 }).limit(50).lean();
+    return response.json(contacts);
+  } catch (error) {
+    console.error("Contact lookup failed:", error.message);
+    return response.status(500).json({ error: "Unable to load contacts." });
   }
 });
 
