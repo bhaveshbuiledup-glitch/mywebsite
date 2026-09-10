@@ -3,16 +3,40 @@ import cors from "cors";
 import dns from "node:dns";
 import { promisify } from "node:util";
 import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import express from "express";
 import mongoose from "mongoose";
+import Stripe from "stripe";
 
 const app = express();
 const port = Number(process.env.PORT || 5000);
 const mongoUri = process.env.MONGODB_URI;
+const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
+const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 const scrypt = promisify(scryptCallback);
 dns.setServers((process.env.DNS_SERVERS || "8.8.8.8,1.1.1.1").split(",").map((server) => server.trim()).filter(Boolean));
 
 app.use(cors());
+app.post("/api/payments/webhook", express.raw({ type: "application/json" }), async (request, response) => {
+  if (!stripe || !stripeWebhookSecret) return response.status(503).send("Payment webhook is not configured.");
+  let event;
+  try {
+    event = stripe.webhooks.constructEvent(request.body, request.headers["stripe-signature"], stripeWebhookSecret);
+  } catch (error) {
+    return response.status(400).send(`Webhook Error: ${error.message}`);
+  }
+  try {
+    if (event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") {
+      await Order.findOneAndUpdate({ stripeSessionId: event.data.object.id }, { paymentStatus: "paid", paidAt: new Date() });
+    } else if (event.type === "checkout.session.expired" || event.type === "checkout.session.async_payment_failed") {
+      await Order.findOneAndUpdate({ stripeSessionId: event.data.object.id }, { paymentStatus: "failed" });
+    }
+    return response.json({ received: true });
+  } catch (error) {
+    console.error("Payment webhook failed:", error.message);
+    return response.status(500).send("Unable to update payment status.");
+  }
+});
 app.use(express.json({ limit: "100kb" }));
 
 const reportSchema = new mongoose.Schema({
@@ -52,6 +76,26 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.models.BizGrowUser || mongoose.model("BizGrowUser", userSchema);
 
+const orderSchema = new mongoose.Schema({
+  orderId: { type: String, required: true, unique: true, index: true },
+  email: { type: String, required: true, lowercase: true, trim: true, index: true },
+  phone: { type: String, required: true, match: /^\d{10}$/ },
+  items: [{ plan: String, duration: Number, unitPrice: Number, quantity: Number }],
+  total: { type: Number, required: true },
+  paymentStatus: { type: String, enum: ["pending", "paid", "failed"], default: "pending" },
+  stripeSessionId: { type: String, index: true },
+  paidAt: Date,
+  createdAt: { type: Date, default: Date.now },
+});
+const Order = mongoose.models.BizGrowOrder || mongoose.model("BizGrowOrder", orderSchema);
+
+const planCatalog = {
+  Monthly: { label: "Monthly", unitPrice: 49, benefits: ["Monthly strategy review", "One priority channel", "Progress dashboard"] },
+  "3 Months": { label: "3 Months", unitPrice: 129, benefits: ["Quarterly growth plan", "Two priority channels", "Monthly performance review"] },
+  "6 Months": { label: "6 Months", unitPrice: 239, benefits: ["Integrated marketing strategy", "Four priority channels", "Biweekly optimization"] },
+  "12 Months": { label: "12 Months", unitPrice: 399, benefits: ["Full-funnel strategy", "Ongoing channel support", "Quarterly planning sessions"] },
+};
+
 async function hashPassword(password) {
   const salt = randomBytes(16).toString("hex");
   const derivedKey = await scrypt(password, salt, 64);
@@ -73,14 +117,15 @@ app.get("/api/health", (_request, response) => {
 app.post("/api/auth/register", async (request, response) => {
   try {
     if (mongoose.connection.readyState !== 1) return response.status(503).json({ error: "MongoDB is not connected." });
-    const { name, email, password, phone = "" } = request.body;
+    const { name, email, phone = "" } = request.body;
+    const password = String(request.body.password || "");
     const normalizedEmail = String(email || "").trim().toLowerCase();
-    if (!name?.trim() || !/^\S+@\S+\.\S+$/.test(normalizedEmail) || String(password || "").length < 8 || (phone && !/^\d{10}$/.test(phone))) return response.status(400).json({ error: "Valid name, email, password, and phone are required." });
+    if (!name?.trim() || !/^\S+@\S+\.\S+$/.test(normalizedEmail) || password.length < 8 || !/^\d{10}$/.test(phone)) return response.status(400).json({ error: "Valid name, email, password, and 10-digit phone number are required." });
     const passwordHash = await hashPassword(password);
     const user = await User.create({ name: name.trim(), email: normalizedEmail, phone, passwordHash });
     return response.status(201).json({ user: { name: user.name, email: user.email, phone: user.phone } });
   } catch (error) {
-    if (error.code === 11000) return response.status(409).json({ error: "An account with this email already exists." });
+    if (error.code === 11000) return response.status(409).json({ error: "Account already exists. Please login." });
     console.error("Registration failed:", error.message);
     return response.status(500).json({ error: "Unable to create account." });
   }
@@ -90,12 +135,49 @@ app.post("/api/auth/login", async (request, response) => {
   try {
     if (mongoose.connection.readyState !== 1) return response.status(503).json({ error: "MongoDB is not connected." });
     const email = String(request.body.email || "").trim().toLowerCase();
+    const phone = String(request.body.phone || "");
+    const password = String(request.body.password || "");
+    if (!/^\S+@\S+\.\S+$/.test(email) || !/^\d{10}$/.test(phone)) return response.status(400).json({ error: "Enter a valid email and exactly 10-digit phone number." });
     const user = await User.findOne({ email }).lean();
-    if (!user || !(await verifyPassword(request.body.password || "", user.passwordHash))) return response.status(401).json({ error: "Invalid email/ID or password. Please check your credentials and try again." });
-    return response.json({ user: { name: user.name, email: user.email, phone: user.phone || "" } });
+    if (!user || !(await verifyPassword(password, user.passwordHash))) return response.status(401).json({ error: "Invalid email or password. Please check your credentials and try again." });
+    await User.updateOne({ _id: user._id }, { $set: { phone } });
+    return response.json({ user: { name: user.name, email: user.email, phone } });
   } catch (error) {
     console.error("Login failed:", error.message);
     return response.status(500).json({ error: "Unable to log in." });
+  }
+});
+
+app.post("/api/orders/checkout", async (request, response) => {
+  try {
+    if (!stripe) return response.status(503).json({ error: "Online payment is not configured." });
+    if (mongoose.connection.readyState !== 1) return response.status(503).json({ error: "MongoDB is not connected." });
+    const email = String(request.body.email || "").trim().toLowerCase();
+    const phone = String(request.body.phone || "");
+    const requestedItems = Array.isArray(request.body.items) ? request.body.items : [];
+    if (!/^\S+@\S+\.\S+$/.test(email) || !/^\d{10}$/.test(phone) || !requestedItems.length) return response.status(400).json({ error: "A valid email, 10-digit phone number, and cart are required." });
+    const items = requestedItems.map((item) => {
+      const catalogItem = planCatalog[item.plan];
+      const quantity = Math.max(1, Math.min(10, Number(item.quantity) || 1));
+      if (!catalogItem) throw new Error("Invalid plan selected.");
+      return { plan: item.plan, duration: Number(item.duration), unitPrice: catalogItem.unitPrice, quantity, catalogItem };
+    });
+    const total = items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
+    const orderId = randomUUID();
+    const order = await Order.create({ orderId, email, phone, items: items.map((item) => ({ plan: item.plan, duration: item.duration, unitPrice: item.unitPrice, quantity: item.quantity })), total });
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      customer_email: email,
+      line_items: items.map((item) => ({ price_data: { currency: "usd", product_data: { name: `BizGrow ${item.plan} plan`, description: item.catalogItem.benefits.join(" | ") }, unit_amount: item.unitPrice * 100 }, quantity: item.quantity })),
+      metadata: { orderId },
+      success_url: `${process.env.CLIENT_URL || "http://localhost:5173"}/pricing?payment=success`,
+      cancel_url: `${process.env.CLIENT_URL || "http://localhost:5173"}/pricing?payment=cancelled`,
+    });
+    await Order.updateOne({ _id: order._id }, { stripeSessionId: session.id });
+    return response.json({ checkoutUrl: session.url });
+  } catch (error) {
+    console.error("Checkout creation failed:", error.message);
+    return response.status(500).json({ error: error.message === "Invalid plan selected." ? error.message : "Unable to start secure checkout." });
   }
 });
 
